@@ -182,3 +182,29 @@ def test_from_settings(monkeypatch):
 
     client = ClefClient.from_settings(settings)
     assert client.url.endswith("/accounts/acct-env/ai/run/@cf/cloudflare/clef")
+
+
+def test_score_probabilities_keyed_by_level_index():
+    raw = dict(ANSWERS, severity={"type": "score", "score": 2.9, "probabilities": {"0": 0.0, "1": 0.05, "2": 0.0, "3": 0.95}})
+    answers = make_client(lambda r: ok({"answers": raw})).decide("x", QUESTIONS)
+    assert answers["severity"].probabilities == {"No impact": 0.0, "Minor": 0.05, "Major": 0.0, "Critical": 0.95}
+
+
+@pytest.mark.parametrize("probabilities", [{"9": 1.0}, {"Unknown": 1.0}])
+def test_unknown_score_level_raises(probabilities):
+    raw = dict(ANSWERS, severity={"type": "score", "score": 1.0, "probabilities": probabilities})
+    with pytest.raises(ClefError, match="malformed score answer"):
+        make_client(lambda r: ok({"answers": raw})).decide("x", QUESTIONS)
+
+
+@pytest.mark.parametrize(
+    "team",
+    [
+        {"choice": "sales", "probabilities": {"billing": 0.2, "technical": 0.8}},
+        {"choice": "technical", "probabilities": {"technical": 0.8, "sales": 0.2}},
+    ],
+)
+def test_undeclared_choice_raises(team):
+    raw = dict(ANSWERS, team={"type": "choice", **team})
+    with pytest.raises(ClefError, match="malformed choice answer"):
+        make_client(lambda r: ok({"answers": raw})).decide("x", QUESTIONS)

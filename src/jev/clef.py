@@ -140,9 +140,13 @@ def _parse_answer(question: Question, raw: Any) -> Answer:
         if isinstance(question, Noul):
             return NoulAnswer(probability=float(raw["noul"]))
         if isinstance(question, Choice):
+            choice = str(raw["choice"])
+            probabilities = {str(k): float(v) for k, v in raw["probabilities"].items()}
+            if choice not in question.options or not probabilities.keys() <= question.options.keys():
+                raise ValueError("answer names an option that wasn't asked for")
             return ChoiceAnswer(
-                choice=str(raw["choice"]),
-                probabilities={str(k): float(v) for k, v in raw["probabilities"].items()},
+                choice=choice,
+                probabilities=probabilities,
                 confidence=_optional_float(raw.get("confidence")),
             )
         if isinstance(question, Score):
@@ -157,11 +161,21 @@ def _parse_answer(question: Question, raw: Any) -> Answer:
 
 
 def _level_probabilities(levels: list[str], raw: Any) -> dict[str, float]:
-    # The docs don't pin this down: accept a list aligned with the levels or a mapping.
+    # Accept a list aligned with the levels, or a mapping keyed by level name or
+    # by level index ("0", "1", ...); always return level names as keys.
     if raw is None:
         return {}
     if isinstance(raw, dict):
-        return {str(k): float(v) for k, v in raw.items()}
+        result: dict[str, float] = {}
+        for key, p in raw.items():
+            key = str(key)
+            if key in levels:
+                result[key] = float(p)
+            elif key.isdigit() and int(key) < len(levels):
+                result[levels[int(key)]] = float(p)
+            else:
+                raise ValueError(f"unknown score level {key!r}")
+        return result
     values = list(raw)
     if len(values) != len(levels):
         raise ValueError("score probabilities don't match the number of levels")
